@@ -29,16 +29,16 @@ def calculate_brightness_percentage(image, brightness_threshold):
     percentage = (bright_pixels / total_pixels) * 100
     return percentage
 
-# for i in range(1, 236):
-#     url = url_pattern.replace("[0001-0236]", f"{i:04d}")
-#     response = requests.get(url)
-#     if response.status_code == 200:
-#         filename = os.path.join(source_directory, f"moon.{i:04d}.tif")
-#         with open(filename, "wb") as file:
-#             file.write(response.content)
-#         print(f"Downloaded: moon.{i:04d}.tif")
-#     else:
-#         print(f"Failed to download: moon.{i:04d}.tif")
+for i in range(1, 236):
+    url = url_pattern.replace("[0001-0236]", f"{i:04d}")
+    response = requests.get(url)
+    if response.status_code == 200:
+        filename = os.path.join(source_directory, f"moon.{i:04d}.tif")
+        with open(filename, "wb") as file:
+            file.write(response.content)
+        print(f"Downloaded: moon.{i:04d}.tif")
+    else:
+        print(f"Failed to download: moon.{i:04d}.tif")
 
 # Loop through all files in the source directory
 for filename in os.listdir(source_directory):
