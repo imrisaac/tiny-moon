@@ -29,7 +29,7 @@ def visualize_thresholds_for_images(image_paths, thresholds):
         img = Image.open(image_path).convert('L')
         img_array = np.array(img)
 
-        mask = create_circular_mask(img_array.shape, radius=115)  # Adjust radius if necessary
+        mask = create_circular_mask(img_array.shape, radius=110)  # Adjust radius if necessary
         masked_img_array = np.where(mask, img_array, 0)
 
         axes[row, 0].imshow(masked_img_array, cmap='gray')
@@ -47,7 +47,7 @@ def calculate_illumination_percentage(image_path, threshold):
     img = Image.open(image_path).convert('L')  # Convert to grayscale
     img_array = np.array(img)
 
-    mask = create_circular_mask(img_array.shape, radius=115)  # radius is half of the diameter (230 pixels)
+    mask = create_circular_mask(img_array.shape, radius=110)  # radius is half of the diameter (230 pixels)
     masked_img_array = np.where(mask, img_array, 0)
 
     illuminated = masked_img_array > threshold
@@ -77,7 +77,7 @@ def add_text_to_image(image_path, illumination_text, angle_text, output_path):
     draw.text((illumination_text_x, illumination_text_y), illumination_text, font=font, fill="white")
     draw.text((angle_text_x, angle_text_y), angle_text, font=font, fill="white")
     img.save(output_path)
-    
+
 def process_images_in_directory(directory_path, output_directory, threshold, labeled_phases):
     if not os.path.exists(output_directory):
         os.makedirs(output_directory)
@@ -96,9 +96,10 @@ def process_images_in_directory(directory_path, output_directory, threshold, lab
             image_path = os.path.join(directory_path, filename)
             illumination_percentage = calculate_illumination_percentage(image_path, threshold)
             phase_angle = interp_function(i)  # Interpolate phase angle
-            # Format the illumination percentage to avoid periods in the filename
+            # Format the illumination percentage and phase angle to avoid periods in the filename
             formatted_percentage = f"{illumination_percentage:.2f}".replace(".", "_")
-            new_filename = f"{i+1:04d}_{formatted_percentage}.png"
+            formatted_phase_angle = f"{phase_angle:.2f}".replace(".", "_")
+            new_filename = f"{i+1:04d}_{formatted_percentage}_{formatted_phase_angle}.png"
             new_image_path = os.path.join(output_directory, new_filename)
             # Add illumination percentage and moon phase angle text to the image
             add_text_to_image(image_path, f"{illumination_percentage:.2f}%", f"{phase_angle:.2f}°", new_image_path)
