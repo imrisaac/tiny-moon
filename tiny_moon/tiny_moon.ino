@@ -3,6 +3,7 @@
 #include <SD.h>
 #include <TFT_eSPI.h>
 #include <PNGdec.h>
+#include <astronomy.h>
 
 #define MAX_IMAGE_WIDTH 240
 
