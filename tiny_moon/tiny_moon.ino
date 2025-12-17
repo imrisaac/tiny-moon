@@ -16,13 +16,13 @@ void setup() {
   Serial.begin(115200);
   while (!Serial);  // wait for Serial to be ready
   Serial.println("Serial connected");
-
+  pinMode(PIN_SD_CS, OUTPUT);
   tft.init();
-  tft.fillScreen(0);
+  tft.fillScreen(255);
   tft.setRotation(1);
 
-  pinMode(D2, OUTPUT);
-  while (!SD.begin(D2)) {
+  
+  while (!SD.begin(PIN_SD_CS)) {
     Serial.println("Unable to access SD Card");
     tft.println("Unable to access SD Card");
     delay(1000); // Add delay to avoid flooding the serial output

@@ -1,130 +1,258 @@
-import os
-import shutil
+import tkinter as tk
+from tkinter import filedialog, messagebox
+import cv2
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont
-import matplotlib.pyplot as plt
-from scipy.interpolate import interp1d
+from PIL import Image, ImageTk
+import os
+import math
 
-def create_circular_mask(image_shape, center=None, radius=None):
-    h, w = image_shape
-    if center is None:  # use the middle of the image
-        center = (int(w / 2), int(h / 2))
-    if radius is None:  # use the smallest distance from the center to an edge
-        radius = min(center[0], center[1], w - center[0], h - center[1])
+class MoonTunerApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Moon Phase Tuner - Scrubber Edition")
+        
+        # Default Variables
+        self.img_path = None
+        self.original_cv_image = None
+        self.display_image = None
+        self.input_dir = ""
+        self.all_image_files = [] # List to hold filenames
+        self.current_index = 0
+        
+        # Tracking variables for tuning
+        self.threshold_val = tk.IntVar(value=15)
+        self.radius_val = tk.IntVar(value=100)
+        self.offset_x = tk.IntVar(value=0)
+        self.offset_y = tk.IntVar(value=0)
 
-    Y, X = np.ogrid[:h, :w]
-    dist_from_center = np.sqrt((X - center[0]) ** 2 + (Y - center[1]) ** 2)
+        # --- GUI LAYOUT ---
+        
+        # Control Panel (Left Side)
+        control_frame = tk.Frame(root, width=350, padx=10, pady=10)
+        control_frame.pack(side=tk.LEFT, fill=tk.Y)
+        
+        # 1. File Selection
+        tk.Label(control_frame, text="1. Load Images", font=("Arial", 10, "bold")).pack(anchor="w", pady=(0, 5))
+        tk.Button(control_frame, text="Select Input Folder", command=self.select_folder, height=2, bg="#ddd").pack(fill=tk.X, pady=5)
+        
+        self.lbl_status = tk.Label(control_frame, text="No folder selected", fg="gray")
+        self.lbl_status.pack(pady=2)
 
-    mask = dist_from_center <= radius
-    return mask
+        # 2. Scrubber (Navigation)
+        tk.Label(control_frame, text="2. Scrub Timeline", font=("Arial", 10, "bold")).pack(anchor="w", pady=(15, 5))
+        
+        nav_frame = tk.Frame(control_frame)
+        nav_frame.pack(fill=tk.X)
+        
+        tk.Button(nav_frame, text="<", command=self.prev_image, width=3).pack(side=tk.LEFT)
+        self.scrubber = tk.Scale(nav_frame, from_=0, to=0, orient=tk.HORIZONTAL, showvalue=0, command=self.on_scrub)
+        self.scrubber.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
+        tk.Button(nav_frame, text=">", command=self.next_image, width=3).pack(side=tk.RIGHT)
+        
+        self.lbl_filename = tk.Label(control_frame, text="--", font=("Arial", 9))
+        self.lbl_filename.pack(pady=2)
 
-def apply_threshold(image_array, threshold):
-    return image_array > threshold
+        # 3. Tuning Controls
+        tk.Label(control_frame, text="3. Fine Tune Mask", font=("Arial", 10, "bold")).pack(anchor="w", pady=(15, 5))
 
-def visualize_thresholds_for_images(image_paths, thresholds):
-    num_images = len(image_paths)
-    fig, axes = plt.subplots(num_images, len(thresholds) + 1, figsize=(15, 5 * num_images))
-    
-    for row, image_path in enumerate(image_paths):
-        img = Image.open(image_path).convert('L')
-        img_array = np.array(img)
+        tk.Label(control_frame, text="Brightness Threshold").pack(anchor="w")
+        tk.Scale(control_frame, from_=0, to=255, orient=tk.HORIZONTAL, 
+                 variable=self.threshold_val, command=self.update_preview).pack(fill=tk.X)
 
-        mask = create_circular_mask(img_array.shape, radius=110)  # Adjust radius if necessary
-        masked_img_array = np.where(mask, img_array, 0)
+        tk.Label(control_frame, text="Mask Radius").pack(anchor="w")
+        self.radius_slider = tk.Scale(control_frame, from_=10, to=500, orient=tk.HORIZONTAL, 
+                                      variable=self.radius_val, command=self.update_preview)
+        self.radius_slider.pack(fill=tk.X)
 
-        axes[row, 0].imshow(masked_img_array, cmap='gray')
-        axes[row, 0].set_title('Original (Masked)')
+        tk.Label(control_frame, text="Center Offset X").pack(anchor="w")
+        tk.Scale(control_frame, from_=-100, to=100, orient=tk.HORIZONTAL, 
+                 variable=self.offset_x, command=self.update_preview).pack(fill=tk.X)
+        
+        tk.Label(control_frame, text="Center Offset Y").pack(anchor="w")
+        tk.Scale(control_frame, from_=-100, to=100, orient=tk.HORIZONTAL, 
+                 variable=self.offset_y, command=self.update_preview).pack(fill=tk.X)
 
-        for col, threshold in enumerate(thresholds):
-            illuminated = apply_threshold(masked_img_array, threshold)
-            axes[row, col + 1].imshow(illuminated, cmap='gray')
-            axes[row, col + 1].set_title(f'Threshold: {threshold}')
+        # 4. Process Button
+        tk.Label(control_frame, text="-----------------------").pack(pady=10)
+        self.stats_label = tk.Label(control_frame, text="Illum: --%\nAngle: --°", font=("Courier", 14, "bold"), fg="#333")
+        self.stats_label.pack(pady=10)
+        
+        tk.Button(control_frame, text="PROCESS ALL IMAGES", bg="green", fg="white", 
+                  font=("Arial", 12, "bold"), command=self.process_all, height=2).pack(fill=tk.X, pady=20)
 
-    plt.tight_layout()
-    plt.show()
+        # Image Display (Right Side)
+        self.canvas_frame = tk.Frame(root, bg="#333")
+        self.canvas_frame.pack(side=tk.RIGHT, expand=True, fill=tk.BOTH)
+        
+        self.canvas_label = tk.Label(self.canvas_frame, text="Load a folder to start", bg="#333", fg="white")
+        self.canvas_label.pack(expand=True)
 
-def calculate_illumination_percentage(image_path, threshold):
-    img = Image.open(image_path).convert('L')  # Convert to grayscale
-    img_array = np.array(img)
+    def select_folder(self):
+        d = filedialog.askdirectory()
+        if d:
+            self.input_dir = d
+            # --- DEBUGGING START ---
+            print(f"Scanning folder: {d}")
+            all_files = os.listdir(d)
+            print(f"Total files found: {len(all_files)}")
+            print(f"First 5 files: {all_files[:5]}")
+            # --- DEBUGGING END ---
+            # Load all valid images
+            valid_ext = ('.jpg', '.jpeg', '.png', '.bmp')
+            self.all_image_files = sorted([f for f in os.listdir(d) if f.lower().endswith(valid_ext)])
+            
+            if not self.all_image_files:
+                messagebox.showerror("Error", "No images found in this folder.")
+                return
 
-    mask = create_circular_mask(img_array.shape, radius=110)  # radius is half of the diameter (230 pixels)
-    masked_img_array = np.where(mask, img_array, 0)
+            # Setup Scrubber
+            count = len(self.all_image_files)
+            self.lbl_status.config(text=f"Loaded {count} images")
+            self.scrubber.config(to=count - 1)
+            self.scrubber.set(0)
+            
+            # Load the first image immediately
+            self.load_image_by_index(0)
 
-    illuminated = masked_img_array > threshold
+    def on_scrub(self, value):
+        idx = int(value)
+        self.load_image_by_index(idx)
 
-    total_pixels = np.sum(mask)
-    illuminated_pixels = np.sum(illuminated)
-    illumination_percentage = (illuminated_pixels / total_pixels) * 100
+    def prev_image(self):
+        new_idx = max(0, self.current_index - 1)
+        self.scrubber.set(new_idx) # This triggers on_scrub
 
-    return illumination_percentage
+    def next_image(self):
+        new_idx = min(len(self.all_image_files) - 1, self.current_index + 1)
+        self.scrubber.set(new_idx) # This triggers on_scrub
 
-def add_text_to_image(image_path, illumination_text, angle_text, output_path):
-    img = Image.open(image_path)
-    draw = ImageDraw.Draw(img)
-    font = ImageFont.load_default()  # Use default font provided by Pillow
+    def load_image_by_index(self, index):
+        if not self.all_image_files: return
+        
+        self.current_index = index
+        filename = self.all_image_files[index]
+        self.img_path = os.path.join(self.input_dir, filename)
+        
+        self.lbl_filename.config(text=f"{index+1}/{len(self.all_image_files)}: {filename}")
+        
+        # Load OpenCV Image
+        self.original_cv_image = cv2.imread(self.img_path)
+        
+        # Auto-guess radius ONLY if it's the very first time loading
+        # Otherwise, preserve the user's manual slider position while scrubbing
+        if self.radius_val.get() == 100 and self.original_cv_image is not None:
+             h, w = self.original_cv_image.shape[:2]
+             # Only auto-set if slider hasn't been touched much
+             # (A bit of a hack, but prevents resetting user work on every scrub)
+             pass 
 
-    # Calculate text size and position for illumination percentage
-    illumination_text_size = draw.textsize(illumination_text, font=font)
-    illumination_text_x = 10
-    illumination_text_y = img.height - illumination_text_size[1] - 10
+        self.update_preview()
 
-    # Calculate text size and position for moon phase angle
-    angle_text_size = draw.textsize(angle_text, font=font)
-    angle_text_x = img.width - angle_text_size[0] - 10
-    angle_text_y = img.height - angle_text_size[1] - 10
+    def update_preview(self, _=None):
+        if self.original_cv_image is None: return
 
-    # Add text to image
-    draw.text((illumination_text_x, illumination_text_y), illumination_text, font=font, fill="white")
-    draw.text((angle_text_x, angle_text_y), angle_text, font=font, fill="white")
-    img.save(output_path)
+        # Get settings
+        thresh = self.threshold_val.get()
+        r = self.radius_val.get()
+        off_x = self.offset_x.get()
+        off_y = self.offset_y.get()
 
-def process_images_in_directory(directory_path, output_directory, threshold, labeled_phases):
-    if not os.path.exists(output_directory):
-        os.makedirs(output_directory)
+        img = self.original_cv_image.copy()
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        h, w = gray.shape
+        cx, cy = (w // 2) + off_x, (h // 2) + off_y
 
-    filenames = sorted(os.listdir(directory_path))
-    
-    # Extract indices and labeled phase angles
-    labeled_indices = sorted([filenames.index(k) for k in labeled_phases.keys()])
-    labeled_angles = [labeled_phases[filenames[idx]] for idx in labeled_indices]
+        # 1. Mask
+        mask = np.zeros_like(gray)
+        cv2.circle(mask, (cx, cy), r, 255, -1)
+        masked_gray = cv2.bitwise_and(gray, gray, mask=mask)
 
-    # Create an interpolation function
-    interp_function = interp1d(labeled_indices, labeled_angles, kind='linear', fill_value='extrapolate')
+        # 2. Threshold
+        _, lit_mask = cv2.threshold(masked_gray, thresh, 255, cv2.THRESH_BINARY)
+        
+        # 3. Stats
+        total = np.pi * (r ** 2)
+        lit = cv2.countNonZero(lit_mask)
+        frac = min(1.0, lit / total)
+        pct = frac * 100
+        
+        # Angle Math
+        ratio = 2 * frac - 1
+        ratio = max(-1.0, min(1.0, ratio))
+        angle = math.degrees(math.acos(ratio))
+        
+        self.stats_label.config(text=f"Illum: {pct:.2f}%\nAngle: {angle:.2f}°")
 
-    for i, filename in enumerate(filenames):
-        if filename.endswith(".png"):
-            image_path = os.path.join(directory_path, filename)
-            illumination_percentage = calculate_illumination_percentage(image_path, threshold)
-            phase_angle = interp_function(i)  # Interpolate phase angle
-            # Format the illumination percentage and phase angle to avoid periods in the filename
-            formatted_percentage = f"{illumination_percentage:.2f}".replace(".", "_")
-            formatted_phase_angle = f"{phase_angle:.2f}".replace(".", "_")
-            new_filename = f"{i+1:04d}_{formatted_percentage}_{formatted_phase_angle}.png"
-            new_image_path = os.path.join(output_directory, new_filename)
-            # Add illumination percentage and moon phase angle text to the image
-            add_text_to_image(image_path, f"{illumination_percentage:.2f}%", f"{phase_angle:.2f}°", new_image_path)
-            print(f"Processed {filename}: {illumination_percentage:.2f}% -> {new_filename}")
+        # 4. Visualization
+        # Yellow for lit part
+        yellow_mask = np.zeros_like(img)
+        yellow_mask[lit_mask == 255] = [0, 255, 255]
+        
+        # Blend
+        preview = cv2.addWeighted(img, 0.8, yellow_mask, 0.4, 0)
+        
+        # Draw Geometry (Green Circle for mask)
+        #cv2.circle(preview, (cx, cy), r, (0, 255, 0), 2)
+        
+        # Display
+        preview_rgb = cv2.cvtColor(preview, cv2.COLOR_BGR2RGB)
+        im_pil = Image.fromarray(preview_rgb)
+        
+        # Smart Resize (Fit to window height)
+        max_h = 600
+        aspect = im_pil.width / im_pil.height
+        im_pil = im_pil.resize((int(max_h * aspect), max_h))
+        
+        self.display_image = ImageTk.PhotoImage(im_pil)
+        self.canvas_label.config(image=self.display_image, text="")
+
+    def process_all(self):
+        if not self.all_image_files: return
+        
+        out_dir = os.path.join(self.input_dir, "processed_output")
+        if not os.path.exists(out_dir): os.makedirs(out_dir)
+
+        thresh = self.threshold_val.get()
+        r = self.radius_val.get()
+        off_x = self.offset_x.get()
+        off_y = self.offset_y.get()
+        
+        processed_count = 0
+        
+        for f in self.all_image_files:
+            path = os.path.join(self.input_dir, f)
+            img = cv2.imread(path)
+            if img is None: continue
+            
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            h, w = gray.shape
+            cx, cy = (w // 2) + off_x, (h // 2) + off_y
+            
+            # Logic matches preview exactly
+            mask = np.zeros_like(gray)
+            cv2.circle(mask, (cx, cy), r, 255, -1)
+            masked_gray = cv2.bitwise_and(gray, gray, mask=mask)
+            _, lit_mask = cv2.threshold(masked_gray, thresh, 255, cv2.THRESH_BINARY)
+            
+            total = np.pi * (r ** 2)
+            lit = cv2.countNonZero(lit_mask)
+            frac = min(1.0, lit / total)
+            pct = frac * 100
+            angle = math.degrees(math.acos(max(-1, min(1, 2*frac - 1))))
+            
+            # Annotate
+            new_name = f"{processed_count:04d}_{pct:05.2f}_{angle:05.1f}.png"
+            cv2.putText(img, f"Illum: {pct:.1f}%", (10, h-40), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,255,0), 2)
+            cv2.putText(img, f"Angle: {angle:.1f} deg", (10, h-10), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,255,0), 2)
+            cv2.circle(img, (cx, cy), r, (0, 255, 0), 2)
+            
+            cv2.imwrite(os.path.join(out_dir, new_name), img)
+            processed_count += 1
+            print(f"Saved {new_name}")
+
+        messagebox.showinfo("Success", f"Processed {processed_count} images!\nCheck the 'processed_output' folder.")
 
 if __name__ == "__main__":
-    directory_path = "cropped_images"  # Replace with the path to your images
-    output_directory = "processed_images"  # Replace with the desired output directory
-
-    # Predefined list of filenames for visualization
-    sample_filenames = ["0041.png", "0114.png", "0235.png"]
-    sample_image_paths = [os.path.join(directory_path, filename) for filename in sample_filenames]
-
-    thresholds = [10, 11, 12, 13, 14, 15]  # List of thresholds to test
-    visualize_thresholds_for_images(sample_image_paths, thresholds)
-
-    threshold = int(input("Enter the chosen threshold value: "))
-
-    # Manually labeled phase angles for specific images
-    labeled_phases = {
-        "0001.png": 0,
-        "0060.png": 90,
-        "0115.png": 180,
-        "0177.png": 270,
-        "0235.png": 359
-    }
-
-    process_images_in_directory(directory_path, output_directory, threshold, labeled_phases)
+    root = tk.Tk()
+    app = MoonTunerApp(root)
+    root.mainloop()
