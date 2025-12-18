@@ -122,6 +122,7 @@ class MoonTunerApp:
         self.offset_x = tk.IntVar(value=0)
         self.offset_y = tk.IntVar(value=0)
         self.zoom_percent = tk.IntVar(value=100)
+        self.crop_percent = tk.IntVar(value=100)
 
         # --- GUI LAYOUT ---
 
@@ -203,6 +204,16 @@ class MoonTunerApp:
             to=200,
             orient=tk.HORIZONTAL,
             variable=self.zoom_percent,
+            command=self.update_preview,
+        )
+
+        self._add_slider(
+            control_frame,
+            "Output Crop (%)",
+            from_=50,
+            to=100,
+            orient=tk.HORIZONTAL,
+            variable=self.crop_percent,
             command=self.update_preview,
         )
 
@@ -344,7 +355,7 @@ class MoonTunerApp:
         off_x = self.offset_x.get()
         off_y = self.offset_y.get()
 
-        img = self.original_cv_image.copy()
+        img = self._apply_user_crop(self.original_cv_image.copy())
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         h, w = gray.shape
         cx, cy = (w // 2) + off_x, (h // 2) + off_y
@@ -410,6 +421,7 @@ class MoonTunerApp:
                 print(str(exc))
                 continue
 
+            img = self._apply_user_crop(img)
             gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
             h, w = gray.shape
             cx, cy = (w // 2) + off_x, (h // 2) + off_y
@@ -434,6 +446,34 @@ class MoonTunerApp:
             print(f"Saved {new_name}")
 
         messagebox.showinfo("Success", f"Processed {processed_count} images!\nCheck the processed_output folder.")
+
+    def _apply_user_crop(self, image):
+        """Crop to a centered 1:1 region scaled by the user's percentage."""
+        height, width = image.shape[:2]
+        if height != width:
+            image = self._center_square_crop(image)
+            height, width = image.shape[:2]
+
+        percent = max(1, min(100, self.crop_percent.get()))
+        if percent == 100:
+            return image
+
+        side = max(1, int(min(height, width) * (percent / 100.0)))
+        top = (height - side) // 2
+        left = (width - side) // 2
+        return image[top:top + side, left:left + side].copy()
+
+    @staticmethod
+    def _center_square_crop(image):
+        """Crop the np.ndarray image to a centered 1:1 aspect ratio."""
+        height, width = image.shape[:2]
+        if height == width:
+            return image
+
+        side = min(height, width)
+        top = (height - side) // 2
+        left = (width - side) // 2
+        return image[top:top + side, left:left + side]
 
 
 if __name__ == "__main__":
