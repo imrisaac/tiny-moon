@@ -244,7 +244,7 @@ class MoonTunerApp:
             new_name = f"{processed_count:04d}_{pct:05.2f}_{angle:05.1f}.png"
             cv2.putText(img, f"Illum: {pct:.1f}%", (10, h-40), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,255,0), 2)
             cv2.putText(img, f"Angle: {angle:.1f} deg", (10, h-10), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,255,0), 2)
-            cv2.circle(img, (cx, cy), r, (0, 255, 0), 2)
+            #cv2.circle(img, (cx, cy), r, (0, 255, 0), 2)
             
             cv2.imwrite(os.path.join(out_dir, new_name), img)
             processed_count += 1

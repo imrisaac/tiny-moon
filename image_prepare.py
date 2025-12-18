@@ -61,8 +61,12 @@ for filename in os.listdir(source_directory):
         # Crop the image
         cropped_image = original_image.crop((left, upper, right, lower))
 
-        # Resize the cropped image to 240x240
-        resized_image = cropped_image.resize((1080, 1080), Image.ANTIALIAS)
+        # Resize the cropped image to 1080x1080 using a Pillow-compatible resampling constant
+        try:
+            resample_filter = Image.Resampling.LANCZOS  # Pillow >= 10
+        except AttributeError:
+            resample_filter = Image.LANCZOS  # Pillow < 10
+        resized_image = cropped_image.resize((1080, 1080), resample=resample_filter)
 
         # brightness_threshold = 15
         # brightness_percentage = calculate_brightness_percentage(resized_image, brightness_threshold)
