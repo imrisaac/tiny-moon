@@ -1,0 +1,14 @@
+--- a/Processors/TFT_eSPI_RP2040.c
++++ b/Processors/TFT_eSPI_RP2040.c
+@@ -12,8 +12,9 @@
+     MbedSPI spi = MbedSPI(TFT_MISO, TFT_MOSI, TFT_SCLK);
+   #else
+     // Community RP2040 board package by Earle Philhower
+-    //SPIClass& spi = SPI; // will use board package default pins
+-    SPIClassRP2040 spi = SPIClassRP2040(SPI_X, TFT_MISO, -1, TFT_SCLK, TFT_MOSI);
++    // Share the board package SPI object with other devices on the bus. This is
++    // required by tiny-moon because the TFT and SD card both use SPI0.
++    SPIClassRP2040& spi = SPI;
+   #endif
+ 
+ #else // PIO interface used (8-bit parallel or SPI)
