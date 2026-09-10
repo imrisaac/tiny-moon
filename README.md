@@ -3,9 +3,8 @@
 GPS-driven Moon phase display for an Adafruit QT Py RP2040 plugged into the
 Seeed Studio Round Display for XIAO.
 
-The firmware reads UTC time and position from an Adafruit MiniGPS connected to
-the QT Py's STEMMA QT port, calculates the current lunar phase with Astronomy
-Engine, and displays the matching 240x240 PNG from a FAT32 microSD card.
+The firmware calculates the current lunar phase with Astronomy Engine and
+displays the matching frame from an indexed NASA image sequence.
 
 ## Hardware
 
@@ -21,11 +20,32 @@ pin mapping is in `tiny_moon/qtpy_round_display_setup.h` and
 
 ## Behavior
 
-At startup, the display waits for a valid GPS position and UTC date. Astronomy
-Engine returns a lunar phase angle where 0 degrees is new Moon, 90 is first
-quarter, 180 is full Moon, and 270 is last quarter. The angle is divided across
-the 235 numbered images. The phase is checked once per minute, but the screen is
-redrawn only when the selected image changes.
+Astronomy Engine returns a lunar phase angle where 0 degrees is new Moon, 90 is
+first quarter, 180 is full Moon, and 270 is last quarter. When GPS mode is
+enabled, the display waits at startup for a valid position and UTC date.
+
+The complete 0-360 degree phase longitude is mapped across all 235 images, so
+waxing and waning select different frames. The phase is checked once per
+minute, and the display is redrawn only when its selected frame changes.
+
+Swipe left across the Moon to open a status menu. It shows the named phase,
+phase angle, selected image, coordinates, and UTC time. Swipe left again for
+the NeoPixel menu. Tap its hue and brightness bars to select a color and
+intensity, or use the on/off button. Swipe right to move back one screen. The
+NeoPixel state is stored in `neopixel.txt` on the microSD card and survives a
+restart.
+
+The complete interface, including the Moon and menus, is permanently rotated
+90 degrees clockwise. The CHSC6X touch controller is polled directly at I2C
+address `0x2e` on GPIO24/25, uses coordinates transformed to match that
+orientation, and automatically reconnects if it is not ready at startup.
+
+The current development configuration bypasses GPS and uses Gainesville,
+Florida (`29.6516`, `-82.3248`). The flash script embeds its current UTC build
+time, and the RP2040 advances a software clock while powered. Because this
+clock is not battery backed, rebooting starts again from the last build time;
+run `./flash.sh` again to refresh it. Set `USE_GPS` to `true` in the sketch to
+restore live MiniGPS position and UTC.
 
 ## Build and flash
 

@@ -5,6 +5,7 @@ project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 arduino_libraries_dir="${ARDUINO_LIBRARIES_DIR:-${HOME}/Arduino/libraries}"
 tft_espi_dir="${arduino_libraries_dir}/TFT_eSPI"
 port="${1:-}"
+build_unix_time="${BUILD_UNIX_TIME:-$(date -u +%s)}"
 
 if [[ ! -d "${tft_espi_dir}" ]]; then
   echo "TFT_eSPI was not found at ${tft_espi_dir}." >&2
@@ -40,7 +41,7 @@ arduino-cli compile \
   --libraries "${work_dir}/libraries" \
   --build-path "${work_dir}/build" \
   --build-property \
-    "build.extra_flags=-include${project_dir}/tiny_moon/qtpy_round_display_setup.h" \
+    "build.extra_flags=-include${project_dir}/tiny_moon/qtpy_round_display_setup.h -DBUILD_UNIX_TIME=${build_unix_time}LL" \
   "${project_dir}/tiny_moon"
 
 arduino-cli upload \

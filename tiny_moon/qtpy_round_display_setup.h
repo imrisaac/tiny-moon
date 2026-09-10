@@ -16,6 +16,7 @@
 #define TFT_CS 28    // QT Py A1,  XIAO socket D1
 #define TFT_DC 26    // QT Py A3,  XIAO socket D3
 #define TFT_BL 20    // QT Py TX,  XIAO socket D6
+#define TFT_BACKLIGHT_ON HIGH
 #define TFT_RST -1
 
 #define LOAD_GLCD
